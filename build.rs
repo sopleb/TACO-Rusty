@@ -23,7 +23,7 @@ fn main() {
         res.set("ProductName", "T.A.C.O.");
         res.set("FileDescription", "Tactical Awareness Control Overlay for EVE Online");
         res.set("CompanyName", "sopleb");
-        res.set("LegalCopyright", "Copyright (c) 2025 sopleb");
+        res.set("LegalCopyright", "Copyright (c) 2026 sopleb");
         res.set("OriginalFilename", "taco.exe");
         if let Err(e) = res.compile() {
             eprintln!("cargo:warning=Failed to compile Windows resources: {e}");

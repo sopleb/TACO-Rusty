@@ -99,7 +99,10 @@ jobs:
 
       - name: Install nfpm
         run: |
-          NFPM_VERSION=$(curl -s https://api.github.com/repos/goreleaser/nfpm/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/^v//')
+          NFPM_VERSION=$(curl -sH "Authorization: token ${{ github.token }}" \
+            https://api.github.com/repos/goreleaser/nfpm/releases/latest \
+            | grep tag_name | cut -d'"' -f4 | sed 's/^v//')
+          echo "Installing nfpm v${NFPM_VERSION}"
           curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/nfpm /usr/local/bin/
 

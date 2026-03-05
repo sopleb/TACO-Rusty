@@ -5,7 +5,7 @@ version: ${VERSION}
 maintainer: sopleb
 description: T.A.C.O. - Tactical Awareness Control Overlay for EVE Online
 vendor: sopleb
-homepage: https://github.com/sopleb/taco
+homepage: https://github.com/sopleb/TACO-Rusty
 license: MIT
 
 contents:
