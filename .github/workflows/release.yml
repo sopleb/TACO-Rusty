@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  workflows: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,7 +28,7 @@ jobs:
         env:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          MAJOR=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
+          MAJOR=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\([0-9]\+\)\..*/\1/')
           NUM=$RUN_NUMBER
           PATCH=$((NUM % 10))
           MINOR=$((NUM / 10))
