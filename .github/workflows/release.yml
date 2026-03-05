@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,9 +40,12 @@ jobs:
       - name: Create tag
         env:
           TAG: ${{ steps.meta.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git tag "$TAG"
-          git push origin "$TAG"
+          SHA=$(git rev-parse HEAD)
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${SHA}"
 
   build-linux:
     needs: prepare
