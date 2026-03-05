@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=T.A.C.O.
+Comment=Tactical Awareness Control Overlay for EVE Online
+Exec=taco
+Icon=taco
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+StartupWMClass=taco

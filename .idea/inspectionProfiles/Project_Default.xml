@@ -1,0 +1,71 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="amqp" />
+          <option value="asgiref" />
+          <option value="attrs" />
+          <option value="billiard" />
+          <option value="bravado" />
+          <option value="bravado-core" />
+          <option value="Brotli" />
+          <option value="celery" />
+          <option value="certifi" />
+          <option value="charset-normalizer" />
+          <option value="click" />
+          <option value="click-didyoumean" />
+          <option value="click-plugins" />
+          <option value="click-repl" />
+          <option value="colorama" />
+          <option value="cryptography" />
+          <option value="django-debug-toolbar" />
+          <option value="django-esi" />
+          <option value="django-redis" />
+          <option value="ecdsa" />
+          <option value="idna" />
+          <option value="josepy" />
+          <option value="jsonfield" />
+          <option value="jsonref" />
+          <option value="jsonschema" />
+          <option value="kombu" />
+          <option value="monotonic" />
+          <option value="mozilla-django-oidc" />
+          <option value="mysqlclient" />
+          <option value="oauthlib" />
+          <option value="pluggy" />
+          <option value="prompt-toolkit" />
+          <option value="pyasn1" />
+          <option value="pycparser" />
+          <option value="PyJWT" />
+          <option value="pyOpenSSL" />
+          <option value="pyrsistent" />
+          <option value="python-dateutil" />
+          <option value="python-dotenv" />
+          <option value="python-jose" />
+          <option value="pytz" />
+          <option value="PyYAML" />
+          <option value="redis" />
+          <option value="requests" />
+          <option value="requests-file" />
+          <option value="requests-oauthlib" />
+          <option value="rsa" />
+          <option value="sentry-sdk" />
+          <option value="setuptools" />
+          <option value="simplejson" />
+          <option value="six" />
+          <option value="sqlparse" />
+          <option value="swagger-spec-validator" />
+          <option value="tldextract" />
+          <option value="tqdm" />
+          <option value="typing_extensions" />
+          <option value="tzdata" />
+          <option value="urllib3" />
+          <option value="vine" />
+          <option value="wcwidth" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

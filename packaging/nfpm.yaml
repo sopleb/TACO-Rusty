@@ -1,0 +1,44 @@
+name: taco
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: sopleb
+description: T.A.C.O. - Tactical Awareness Control Overlay for EVE Online
+vendor: sopleb
+homepage: https://github.com/sopleb/taco
+license: MIT
+
+contents:
+  - src: ./target/release/taco
+    dst: /usr/bin/taco
+    file_info:
+      mode: 0755
+
+  - src: ./resources/taco.desktop
+    dst: /usr/share/applications/taco.desktop
+    file_info:
+      mode: 0644
+
+  - src: ./resources/icons/icon-512-maskable.png
+    dst: /usr/share/icons/hicolor/512x512/apps/taco.png
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    depends:
+      - libgl1
+      - libxkbcommon0
+      - libwayland-client0
+      - libx11-6
+      - libasound2
+      - libgtk-3-0
+
+  rpm:
+    depends:
+      - mesa-libGL
+      - libxkbcommon
+      - wayland-libs-client
+      - libX11
+      - alsa-lib
+      - gtk3

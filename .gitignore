@@ -1,0 +1,3 @@
+/target
+resources/data/*.json
+resources/data/sde_version.txt

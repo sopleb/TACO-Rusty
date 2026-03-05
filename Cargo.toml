@@ -1,0 +1,69 @@
+[package]
+name = "taco"
+version = "3.0.1"
+edition = "2021"
+description = "T.A.C.O. - Tactical Awareness Control Overlay for EVE Online"
+
+[dependencies]
+# GUI + OpenGL
+eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+egui = "0.33"
+glow = "0.16"
+
+# Math (SIMD-optimized)
+glam = { version = "0.29", features = ["serde"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Audio - rodio for Windows/macOS, system commands for Linux
+rodio = { version = "0.20", default-features = false, features = ["wav"] }
+
+# File watching (inotify on Linux - event-driven, zero CPU when idle)
+notify = "7"
+
+# Regex for log parsing
+regex = "1"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Platform directories for config path
+dirs = "6"
+
+# Image loading for textures
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Faster hashmap
+rustc-hash = "2"
+
+# HTTP client (sde_convert only)
+ureq = "3"
+
+# Zip extraction (sde_convert only)
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "taco"
+path = "src/main.rs"
+
+[[bin]]
+name = "sde_convert"
+path = "src/bin/sde_convert.rs"
+
+[build-dependencies]
+ureq = "3"
+serde_json = "1"
+winresource = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = false
+panic = "abort"
