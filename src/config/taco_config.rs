@@ -251,7 +251,15 @@ impl TacoConfig {
     }
 
     pub fn export_to(&self) {
-        let path = Self::get_config_dir().join("taco_export.json");
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export TACO Profile")
+            .set_file_name("taco_profile.json")
+            .add_filter("JSON", &["json"])
+            .set_directory(Self::get_config_dir())
+            .save_file()
+        else {
+            return;
+        };
         match serde_json::to_string_pretty(self) {
             Ok(json) => {
                 if let Err(e) = fs::write(&path, json) {
@@ -263,11 +271,11 @@ impl TacoConfig {
     }
 
     pub fn import_from() -> Option<Self> {
-        let path = Self::get_config_dir().join("taco_export.json");
-        if !path.exists() {
-            log::warn!("No export file found at {:?}", path);
-            return None;
-        }
+        let path = rfd::FileDialog::new()
+            .set_title("Import TACO Profile")
+            .add_filter("JSON", &["json"])
+            .set_directory(Self::get_config_dir())
+            .pick_file()?;
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(config) => {

@@ -439,7 +439,7 @@ impl ConfigPanel {
 
                 ui.collapsing("About", |ui| {
                     ui.label("T.A.C.O. - Tactical Awareness Control Overlay");
-                    ui.label("Version: 1.0.0 (Rust)");
+                    ui.label(format!("Version: {}", env!("TACO_VERSION")));
                     ui.separator();
                     ui.label("Controls:");
                     ui.label("  Left drag: Pan map");

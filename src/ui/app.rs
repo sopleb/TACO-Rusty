@@ -784,6 +784,8 @@ impl eframe::App for TacoApp {
                         w.stop();
                     }
                     self.intel_panel.remove_channel_tab(&name);
+                    self.config.custom_channels.retain(|ch| ch.name != name);
+                    self.config.save();
                 }
                 ConfigEvent::IgnoreStringAdded(s) => {
                     self.config.ignore_strings.push(s.clone());

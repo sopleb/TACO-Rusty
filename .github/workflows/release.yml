@@ -79,6 +79,8 @@ jobs:
         run: cargo run --release --bin sde_convert
 
       - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release
 
       - name: Collect binary info
@@ -158,6 +160,8 @@ jobs:
         run: cargo run --release --bin sde_convert
 
       - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release
 
       - name: Package zip
@@ -195,9 +199,13 @@ jobs:
         run: cargo run --release --bin sde_convert
 
       - name: Build release binary (arm64)
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release --target aarch64-apple-darwin
 
       - name: Build release binary (x86_64)
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release --target x86_64-apple-darwin
 
       - name: Create universal binary and package
@@ -236,6 +244,8 @@ jobs:
         run: cargo run --release --bin sde_convert
 
       - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release
 
       - name: Build Arch package
@@ -301,6 +311,8 @@ jobs:
         run: cargo run --release --bin sde_convert
 
       - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
         run: cargo build --release
 
       - name: Build Flatpak bundle

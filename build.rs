@@ -8,6 +8,13 @@ fn main() {
     println!("cargo:rerun-if-changed=resources/data/sde_version.txt");
     println!("cargo:rerun-if-changed=resources/data/systemdata.json");
     println!("cargo:rerun-if-changed=resources/icons/app.ico");
+    println!("cargo:rerun-if-env-changed=TACO_BUILD_VERSION");
+
+    if let Ok(v) = std::env::var("TACO_BUILD_VERSION") {
+        println!("cargo:rustc-env=TACO_VERSION={v}");
+    } else {
+        println!("cargo:rustc-env=TACO_VERSION={}", env!("CARGO_PKG_VERSION"));
+    }
 
     #[cfg(target_os = "windows")]
     {

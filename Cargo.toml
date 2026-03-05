@@ -42,6 +42,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Faster hashmap
 rustc-hash = "2"
 
+# Native file dialogs
+rfd = "0.15"
+
 # HTTP client (sde_convert only)
 ureq = "3"
 
