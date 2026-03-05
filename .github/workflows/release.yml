@@ -1,0 +1,398 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version and generate tag
+        id: meta
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          MAJOR=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
+          NUM=$RUN_NUMBER
+          PATCH=$((NUM % 10))
+          MINOR=$((NUM / 10))
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Tag: $TAG (run #${RUN_NUMBER})"
+
+      - name: Create tag
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+  build-linux:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libasound2-dev \
+            libatk1.0-dev \
+            libgtk-3-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Generate SDE data
+        run: cargo run --release --bin sde_convert
+
+      - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release
+
+      - name: Collect binary info
+        run: |
+          file target/release/taco
+          ldd target/release/taco
+          ls -lh target/release/taco
+
+      - name: Package tar.gz
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p dist
+          tar czf "dist/taco-${VERSION}-linux-x86_64.tar.gz" \
+            -C target/release taco
+
+      - name: Install nfpm
+        run: |
+          NFPM_VERSION=$(curl -sH "Authorization: token ${{ github.token }}" \
+            https://api.github.com/repos/goreleaser/nfpm/releases/latest \
+            | grep tag_name | cut -d'"' -f4 | sed 's/^v//')
+          echo "Installing nfpm v${NFPM_VERSION}"
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/nfpm /usr/local/bin/
+
+      - name: Build .deb package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: nfpm package -p deb -f packaging/nfpm.yaml -t dist/
+
+      - name: Build .rpm package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: nfpm package -p rpm -f packaging/nfpm.yaml -t dist/
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          curl -sfL -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy
+
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/512x512/apps
+          cp target/release/taco AppDir/usr/bin/
+          cp resources/taco.desktop AppDir/usr/share/applications/taco.desktop
+          cp resources/icons/icon-512-maskable.png AppDir/usr/share/icons/hicolor/512x512/apps/taco.png
+
+          sed -i 's|Exec=.*|Exec=taco|' AppDir/usr/share/applications/taco.desktop
+
+          ARCH=x86_64 ./linuxdeploy \
+            --appdir AppDir \
+            --desktop-file AppDir/usr/share/applications/taco.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/taco.png \
+            --output appimage
+
+          mv *.AppImage "dist/taco-${VERSION}-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/*
+
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Generate SDE data
+        run: cargo run --release --bin sde_convert
+
+      - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release
+
+      - name: Package zip
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path target/release/taco.exe -DestinationPath "dist/taco-${env:VERSION}-windows-x86_64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: dist/*
+
+  build-macos:
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Generate SDE data
+        run: cargo run --release --bin sde_convert
+
+      - name: Build release binary (arm64)
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Build release binary (x86_64)
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create universal binary and package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p dist
+          lipo -create \
+            target/aarch64-apple-darwin/release/taco \
+            target/x86_64-apple-darwin/release/taco \
+            -output taco-universal
+          chmod +x taco-universal
+          tar czf "dist/taco-${VERSION}-macos-universal.tar.gz" taco-universal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: dist/*
+
+  build-arch:
+    needs: prepare
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            rust \
+            libx11 libxrandr libxcursor libxi libxkbcommon \
+            wayland mesa alsa-lib gtk3
+
+      - name: Generate SDE data
+        run: cargo run --release --bin sde_convert
+
+      - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release
+
+      - name: Build Arch package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p pkg/usr/bin pkg/usr/share/applications pkg/usr/share/icons/hicolor/512x512/apps
+          cp target/release/taco pkg/usr/bin/
+          cp resources/taco.desktop pkg/usr/share/applications/
+          cp resources/icons/icon-512-maskable.png pkg/usr/share/icons/hicolor/512x512/apps/taco.png
+          sed -i "s|Exec=.*|Exec=/usr/bin/taco|" pkg/usr/share/applications/taco.desktop
+
+          cat > pkg/.PKGINFO <<PKGINFO
+          pkgname = taco
+          pkgver = ${VERSION}-1
+          pkgdesc = Tactical Awareness Control Overlay for EVE Online
+          url = https://github.com/sopleb/taco
+          arch = x86_64
+          license = MIT
+          depend = libx11
+          depend = libxkbcommon
+          depend = wayland
+          depend = mesa
+          depend = alsa-lib
+          depend = gtk3
+          PKGINFO
+          sed -i 's/^          //' pkg/.PKGINFO
+
+          mkdir -p dist
+          cd pkg
+          tar czf "../dist/taco-${VERSION}-1-x86_64.pkg.tar.gz" .PKGINFO usr/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: dist/*
+
+  build-flatpak:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flatpak and SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub \
+            org.freedesktop.Platform//23.08 \
+            org.freedesktop.Sdk//23.08
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get install -y \
+            libgl-dev libxkbcommon-dev libwayland-dev libx11-dev \
+            libxrandr-dev libxcursor-dev libxi-dev libasound2-dev \
+            libatk1.0-dev libgtk-3-dev
+
+      - name: Generate SDE data
+        run: cargo run --release --bin sde_convert
+
+      - name: Build release binary
+        env:
+          TACO_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release
+
+      - name: Build Flatpak bundle
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p flatpak-build/files/bin
+          mkdir -p flatpak-build/files/share/applications
+          mkdir -p flatpak-build/files/share/icons/hicolor/512x512/apps
+          mkdir -p flatpak-build/export/share/applications
+          mkdir -p flatpak-build/export/share/icons/hicolor/512x512/apps
+
+          cp target/release/taco flatpak-build/files/bin/
+
+          cp resources/icons/icon-512-maskable.png \
+            flatpak-build/files/share/icons/hicolor/512x512/apps/com.github.sopleb.taco.png
+          cp resources/icons/icon-512-maskable.png \
+            flatpak-build/export/share/icons/hicolor/512x512/apps/com.github.sopleb.taco.png
+
+          cat > flatpak-build/files/share/applications/com.github.sopleb.taco.desktop <<'DESK'
+          [Desktop Entry]
+          Name=T.A.C.O.
+          Comment=Tactical Awareness Control Overlay for EVE Online
+          Exec=taco
+          Icon=com.github.sopleb.taco
+          Terminal=false
+          Type=Application
+          Categories=Game;Utility;
+          DESK
+          sed -i 's/^          //' flatpak-build/files/share/applications/com.github.sopleb.taco.desktop
+          cp flatpak-build/files/share/applications/com.github.sopleb.taco.desktop \
+            flatpak-build/export/share/applications/
+
+          cat > flatpak-build/metadata <<'META'
+          [Application]
+          name=com.github.sopleb.taco
+          runtime=org.freedesktop.Platform/x86_64/23.08
+          sdk=org.freedesktop.Sdk/x86_64/23.08
+          command=taco
+
+          [Context]
+          shared=ipc;network;
+          sockets=x11;wayland;pulseaudio;
+          devices=dri;
+          filesystems=home;
+          META
+
+          mkdir -p dist repo
+          flatpak build-export repo flatpak-build
+          flatpak build-bundle repo "dist/taco-${VERSION}-x86_64.flatpak" com.github.sopleb.taco
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-package
+          path: dist/*
+
+  release:
+    needs: [prepare, build-linux, build-windows, build-macos, build-arch, build-flatpak]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: "TACO ${{ needs.prepare.outputs.tag }}"
+          generate_release_notes: true
+          files: |
+            artifacts/linux-packages/*
+            artifacts/windows-package/*
+            artifacts/macos-package/*
+            artifacts/arch-package/*
+            artifacts/flatpak-package/*
+
