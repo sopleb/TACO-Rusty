@@ -395,3 +395,4 @@ jobs:
             artifacts/macos-package/*
             artifacts/arch-package/*
             artifacts/flatpak-package/*
+
