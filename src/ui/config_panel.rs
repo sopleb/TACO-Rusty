@@ -24,6 +24,7 @@ pub enum ConfigEvent {
     MaxIntelMessagesChanged(usize),
     ExportProfile,
     ImportProfile,
+    TestAlertPopup,
 }
 
 pub struct ConfigPanel {
@@ -102,13 +103,16 @@ impl ConfigPanel {
                 ui.collapsing(format!("Alerts ({})", alert_triggers.len()), |ui| {
                     let mut action: Option<(&str, usize)> = None;
                     let trigger_count = alert_triggers.len();
-                    let trigger_info: Vec<(bool, String)> = alert_triggers.iter()
-                        .map(|t| (t.enabled, format!("{}", t)))
+                    let trigger_info: Vec<(bool, bool, String)> = alert_triggers.iter()
+                        .map(|t| (t.enabled, t.show_popup, format!("{}", t)))
                         .collect();
-                    for (i, (mut enabled, label)) in trigger_info.into_iter().enumerate() {
+                    for (i, (mut enabled, has_popup, label)) in trigger_info.into_iter().enumerate() {
                         ui.horizontal(|ui| {
                             if ui.checkbox(&mut enabled, "").changed() {
                                 action = Some(("update_enabled", i));
+                            }
+                            if has_popup {
+                                ui.colored_label(egui::Color32::YELLOW, "\u{1f514}").on_hover_text("Popup enabled");
                             }
                             ui.label(&label);
                             if ui.small_button("Edit").clicked() {
@@ -200,6 +204,34 @@ impl ConfigPanel {
                             alert_triggers.push(preset);
                             self.events.push(ConfigEvent::AlertTriggerUpdated);
                         }
+
+                        ui.separator();
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            ui.label("Alert Popup Position:");
+                            ui.horizontal(|ui| {
+                                ui.label("X:");
+                                if ui.add(egui::DragValue::new(&mut config.alert_popup_x).speed(1.0)).changed() {
+                                    config.save();
+                                }
+                                ui.label("Y:");
+                                if ui.add(egui::DragValue::new(&mut config.alert_popup_y).speed(1.0)).changed() {
+                                    config.save();
+                                }
+                                if ui.button("Test").on_hover_text("Show a test popup at this position").clicked() {
+                                    self.events.push(ConfigEvent::TestAlertPopup);
+                                }
+                            });
+                        }
+                        #[cfg(target_os = "linux")]
+                        {
+                            ui.horizontal(|ui| {
+                                ui.label("Alert popups use system notifications");
+                                if ui.button("Test").on_hover_text("Send a test notification").clicked() {
+                                    self.events.push(ConfigEvent::TestAlertPopup);
+                                }
+                            });
+                        }
                     }
 
                     if let Some(ref mut trigger) = self.editing_trigger.clone() {
@@ -216,6 +248,9 @@ impl ConfigPanel {
                                     self.show_custom_edit(ui, trigger);
                                 }
                             }
+
+                            ui.checkbox(&mut trigger.show_popup, "Show Popup")
+                                .on_hover_text("Display an alert overlay on the map when this trigger fires");
 
                             // Sound selector
                             self.show_sound_selector(ui, trigger);
@@ -408,6 +443,7 @@ impl ConfigPanel {
                         self.events.push(ConfigEvent::ConfigChanged);
                         config.save();
                     }
+
                 });
 
                 ui.collapsing("Map", |ui| {

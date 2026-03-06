@@ -97,6 +97,10 @@ pub struct TacoConfig {
     pub dark_mode: bool,
     #[serde(default)]
     pub persistent_system_labels: bool,
+    #[serde(default = "default_popup_x")]
+    pub alert_popup_x: f32,
+    #[serde(default = "default_popup_y")]
+    pub alert_popup_y: f32,
 
     #[serde(default)]
     pub custom_channels: Vec<ChannelConfig>,
@@ -150,6 +154,12 @@ fn default_1f() -> f32 {
 fn default_max_intel_messages() -> usize {
     100
 }
+fn default_popup_x() -> f32 {
+    100.0
+}
+fn default_popup_y() -> f32 {
+    100.0
+}
 
 impl Default for TacoConfig {
     fn default() -> Self {
@@ -187,6 +197,8 @@ impl Default for TacoConfig {
             max_intel_messages: 100,
             dark_mode: false,
             persistent_system_labels: false,
+            alert_popup_x: 100.0,
+            alert_popup_y: 100.0,
             custom_channels: Vec::new(),
             alert_triggers: Vec::new(),
             ignore_strings: Vec::new(),

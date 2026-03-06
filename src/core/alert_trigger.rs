@@ -116,6 +116,8 @@ pub struct AlertTrigger {
     pub repeat_interval: u32,
     #[serde(default)]
     pub system_name: String,
+    #[serde(default)]
+    pub show_popup: bool,
     #[serde(skip)]
     pub trigger_time: Option<DateTime<Utc>>,
 }
@@ -144,6 +146,7 @@ impl Default for AlertTrigger {
             text: String::new(),
             repeat_interval: 0,
             system_name: String::new(),
+            show_popup: false,
             trigger_time: None,
         }
     }
