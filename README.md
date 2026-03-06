@@ -24,10 +24,19 @@ Grab the latest build from [Releases](https://github.com/sopleb/TACO-Rusty/relea
 - 3D/2D interactive star map with system connections
 - Real-time intel monitoring from EVE chat logs
 - Configurable range-based and keyword alert triggers with sound notifications
+- Alert popup notifications (system notifications on Linux, overlay window on Windows/macOS)
+- Preset alert templates for quick setup (in-system, 3-jump, 5-jump)
 - Multi-character tracking with automatic system detection
 - Home system, landmarks, and monitored system highlighting
 - Right-click context menu for system actions (ignore, highlight, set home)
 - Follow characters across the map
+- Color legend overlay on the map (Home/Alert/Character)
+- Toast notifications for key actions
+- System info on hover (name + region) and home/character status bar
+- Message counts on intel tabs and config section headers
+- Tooltips on config options for new users
+- Confirmation dialogs for destructive actions
+- Auto-update checker with link to latest release
 - Profile export/import
 - Dark mode
 - Cross-platform: Windows, macOS, Linux (X11 + Wayland)
@@ -48,6 +57,8 @@ Grab the latest build from [Releases](https://github.com/sopleb/TACO-Rusty/relea
 | Scroll | Zoom |
 | Click | Select system |
 | Right-click | Context menu |
+| Ctrl+F | Focus search (Cmd+F on macOS) |
+| Home | Refocus map on home/characters |
 | Ctrl+Q | Quit (Cmd+Q on macOS) |
 | F11 | Toggle fullscreen (Ctrl+F11 on macOS) |
 | Ctrl+H | Toggle panel (Cmd+H on macOS) |

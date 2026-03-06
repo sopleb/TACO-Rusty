@@ -70,32 +70,17 @@ pub struct TacoConfig {
     pub landmark_systems: Vec<usize>,
 
     #[serde(default = "default_true")]
-    pub display_new_file_alerts: bool,
-    #[serde(default = "default_true")]
-    pub display_open_file_alerts: bool,
-    #[serde(default = "default_true")]
     pub display_character_names: bool,
     #[serde(default = "default_true")]
     pub show_character_locations: bool,
-    #[serde(default)]
-    pub camera_follow_character: bool,
-    #[serde(default = "default_neg_one")]
-    pub centre_on_character: i32,
 
     #[serde(default)]
     pub map_range_from: u32,
     #[serde(default = "default_3d")]
     pub map_mode: String,
 
-    #[serde(default = "default_neg_one")]
-    pub anomaly_monitor_sound_id: i32,
-    #[serde(default)]
-    pub anomaly_monitor_sound_path: String,
-
     #[serde(default = "default_true")]
     pub show_alert_age: bool,
-    #[serde(default = "default_true")]
-    pub show_alert_age_secs: bool,
     #[serde(default = "default_10")]
     pub max_alert_age: u32,
     #[serde(default = "default_20")]
@@ -112,6 +97,10 @@ pub struct TacoConfig {
     pub dark_mode: bool,
     #[serde(default)]
     pub persistent_system_labels: bool,
+    #[serde(default = "default_popup_x")]
+    pub alert_popup_x: f32,
+    #[serde(default = "default_popup_y")]
+    pub alert_popup_y: f32,
 
     #[serde(default)]
     pub custom_channels: Vec<ChannelConfig>,
@@ -123,8 +112,6 @@ pub struct TacoConfig {
     pub ignore_systems: Vec<usize>,
     #[serde(default)]
     pub monitored_systems: Vec<usize>,
-    #[serde(default)]
-    pub character_list: Vec<String>,
 }
 
 fn default_50() -> i32 {
@@ -148,9 +135,6 @@ fn default_neg1416() -> f32 {
 fn default_3702() -> f32 {
     3702.0
 }
-fn default_neg_one() -> i32 {
-    -1
-}
 fn default_3d() -> String {
     "3d".to_string()
 }
@@ -169,6 +153,12 @@ fn default_1f() -> f32 {
 
 fn default_max_intel_messages() -> usize {
     100
+}
+fn default_popup_x() -> f32 {
+    100.0
+}
+fn default_popup_y() -> f32 {
+    100.0
 }
 
 impl Default for TacoConfig {
@@ -195,18 +185,11 @@ impl Default for TacoConfig {
             preserve_selected_systems: true,
             selected_systems: Vec::new(),
             landmark_systems: Vec::new(),
-            display_new_file_alerts: true,
-            display_open_file_alerts: true,
             display_character_names: true,
             show_character_locations: true,
-            camera_follow_character: false,
-            centre_on_character: -1,
             map_range_from: 0,
             map_mode: "3d".to_string(),
-            anomaly_monitor_sound_id: -1,
-            anomaly_monitor_sound_path: String::new(),
             show_alert_age: true,
-            show_alert_age_secs: true,
             max_alert_age: 10,
             max_alerts: 20,
             map_text_size: 8,
@@ -214,12 +197,13 @@ impl Default for TacoConfig {
             max_intel_messages: 100,
             dark_mode: false,
             persistent_system_labels: false,
+            alert_popup_x: 100.0,
+            alert_popup_y: 100.0,
             custom_channels: Vec::new(),
             alert_triggers: Vec::new(),
             ignore_strings: Vec::new(),
             ignore_systems: Vec::new(),
             monitored_systems: Vec::new(),
-            character_list: Vec::new(),
         }
     }
 }

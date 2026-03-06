@@ -21,6 +21,25 @@ use crate::ui::config_panel::{ConfigEvent, ConfigPanel};
 use crate::ui::gl_map::{GlMap, MapLabelText};
 use crate::ui::intel_panel::IntelPanel;
 
+struct Toast {
+    message: String,
+    created: Instant,
+    color: egui::Color32,
+}
+
+struct AlertPopup {
+    title: String,
+    detail: String,
+    created: Instant,
+}
+
+#[derive(Clone)]
+enum ConfirmAction {
+    RemoveAlert(usize),
+    ClearHome,
+    RemoveChannel(String),
+}
+
 pub struct TacoApp {
     config: TacoConfig,
     manager: Arc<Mutex<SolarSystemManager>>,
@@ -57,6 +76,16 @@ pub struct TacoApp {
     last_watcher_tick: Instant,
 
     gl_initialized: bool,
+
+    search_focused: bool,
+    toasts: Vec<Toast>,
+    alert_popups: Vec<AlertPopup>,
+    confirm_dialog: Option<(String, ConfirmAction)>,
+    update_available: Option<String>,
+    update_checked: bool,
+    update_rx: Arc<Mutex<Option<String>>>,
+    show_legend: bool,
+    positioning_popup: bool,
 }
 
 impl TacoApp {
@@ -155,6 +184,15 @@ impl TacoApp {
             last_tick: Instant::now(),
             last_watcher_tick: Instant::now(),
             gl_initialized: false,
+            search_focused: false,
+            toasts: Vec::new(),
+            alert_popups: Vec::new(),
+            confirm_dialog: None,
+            update_available: None,
+            update_checked: false,
+            update_rx: Arc::new(Mutex::new(None)),
+            show_legend: true,
+            positioning_popup: false,
         }
     }
 
@@ -380,6 +418,20 @@ impl TacoApp {
                     if should_fire {
                         trigger.trigger_time = Some(now);
                         sounds_to_play.push((trigger.sound_id, trigger.sound_path.clone()));
+                        if trigger.show_popup {
+                            let manager = self.manager.lock().unwrap();
+                            let sys_name = if sys_id < manager.solar_systems.len() {
+                                manager.solar_systems[sys_id].name.clone()
+                            } else {
+                                "Unknown".to_string()
+                            };
+                            drop(manager);
+                            self.alert_popups.push(AlertPopup {
+                                title: format!("Custom Alert: {}", sys_name),
+                                detail: format!("Matched: \"{}\"", trigger.text),
+                                created: Instant::now(),
+                            });
+                        }
                     }
                 }
             }
@@ -409,6 +461,7 @@ impl TacoApp {
                 || trigger
                     .trigger_time
                     .is_none_or(|t| (now - t).num_seconds() > interval);
+            let wants_popup = trigger.show_popup;
             if should_fire {
                 trigger.trigger_time = Some(now);
                 let sound_id = trigger.sound_id;
@@ -428,6 +481,13 @@ impl TacoApp {
                 drop(manager);
                 let jump_label = if jumps == 1 { "jump" } else { "jumps" };
                 let jump_info = format!("{} {} from {}", jumps, jump_label, ref_name);
+                if wants_popup {
+                    self.alert_popups.push(AlertPopup {
+                        title: format!("ALERT: {}", sys_name),
+                        detail: jump_info.clone(),
+                        created: Instant::now(),
+                    });
+                }
                 self.intel_panel.write_intel_with_jump(
                     channel,
                     &format!(
@@ -668,6 +728,63 @@ impl TacoApp {
             self.status_message = format!("System \"{}\" not found", name);
         }
     }
+
+    fn show_toast(&mut self, msg: &str, color: egui::Color32) {
+        self.toasts.push(Toast {
+            message: msg.to_string(),
+            created: Instant::now(),
+            color,
+        });
+    }
+
+    fn do_refocus(&mut self) {
+        let mut targets: Vec<usize> = Vec::new();
+        for ch in &self.followed_chars {
+            if let Some(&loc) = self.char_locations.get(ch) {
+                if loc >= 0 {
+                    targets.push(loc as usize);
+                }
+            }
+        }
+        let manager = self.manager.lock().unwrap();
+        if manager.home_system_id >= 0 {
+            let home = manager.home_system_id as usize;
+            if !targets.contains(&home) {
+                targets.push(home);
+            }
+        }
+        if !targets.is_empty() {
+            self.refocus_index %= targets.len();
+            let target = targets[self.refocus_index];
+            self.gl_map.lock().unwrap().zoom_to_system(target, &manager.solar_systems);
+            self.refocus_index = (self.refocus_index + 1) % targets.len();
+        }
+    }
+
+    fn check_for_updates(&mut self) {
+        if self.update_checked {
+            return;
+        }
+        self.update_checked = true;
+        let current_version = env!("TACO_VERSION").to_string();
+        let slot = self.update_rx.clone();
+        std::thread::spawn(move || {
+            let url = "https://api.github.com/repos/sopleb/TACO-Rusty/releases/latest";
+            let Ok(mut response) = ureq::get(url)
+                .header("User-Agent", "taco-update-checker")
+                .call()
+            else { return };
+            let Ok(body) = response.body_mut().read_to_string() else { return };
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) else { return };
+            if let Some(tag) = json["tag_name"].as_str() {
+                let remote = tag.trim_start_matches('v');
+                let local = current_version.trim_start_matches('v');
+                if remote != local {
+                    *slot.lock().unwrap() = Some(remote.to_string());
+                }
+            }
+        });
+    }
 }
 
 impl eframe::App for TacoApp {
@@ -709,7 +826,18 @@ impl eframe::App for TacoApp {
             if cmd && i.key_pressed(egui::Key::H) {
                 self.show_right_panel = !self.show_right_panel;
             }
+            if cmd && i.key_pressed(egui::Key::F) {
+                self.search_focused = true;
+            }
+            if i.key_pressed(egui::Key::Home) {
+                // Handled after input block
+            }
         });
+
+        // Home key refocus (outside input closure to call &mut self methods)
+        if ctx.input(|i| i.key_pressed(egui::Key::Home)) {
+            self.do_refocus();
+        }
 
         let now = Instant::now();
         if now.duration_since(self.last_tick) >= Duration::from_millis(33) {
@@ -728,6 +856,18 @@ impl eframe::App for TacoApp {
             self.last_watcher_tick = now;
             self.tick_watchers();
         }
+
+        // Auto-update checker
+        self.check_for_updates();
+        if self.update_available.is_none() {
+            if let Some(version) = self.update_rx.lock().unwrap().take() {
+                self.update_available = Some(version);
+            }
+        }
+
+        // Expire old toasts and popups
+        self.toasts.retain(|t| t.created.elapsed() < Duration::from_secs(3));
+        self.alert_popups.retain(|p| p.created.elapsed() < Duration::from_secs(8));
 
         let events = self.config_panel.drain_events();
         for event in events {
@@ -765,6 +905,7 @@ impl eframe::App for TacoApp {
                     self.gl_map.lock().unwrap().map_mode_2d = is_2d;
                 }
                 ConfigEvent::ChannelAdded(name, prefix) => {
+                    self.show_toast(&format!("Channel added: {}", name), egui::Color32::GREEN);
                     self.intel_panel.add_channel_tab(&name);
                     if self.process_logs {
                         let log_path = if self.config.override_log_path {
@@ -780,14 +921,13 @@ impl eframe::App for TacoApp {
                     }
                 }
                 ConfigEvent::ChannelRemoved(name) => {
-                    if let Some(mut w) = self.log_watchers.remove(&name) {
-                        w.stop();
-                    }
-                    self.intel_panel.remove_channel_tab(&name);
-                    self.config.custom_channels.retain(|ch| ch.name != name);
-                    self.config.save();
+                    self.confirm_dialog = Some((
+                        format!("Remove channel '{}'?", name),
+                        ConfirmAction::RemoveChannel(name),
+                    ));
                 }
                 ConfigEvent::IgnoreStringAdded(s) => {
+                    self.show_toast(&format!("Ignore string added: {}", s), egui::Color32::GREEN);
                     self.config.ignore_strings.push(s.clone());
                     let pattern = format!(r"(?i)\b{}\b", regex::escape(&s));
                     if let Ok(re) = Regex::new(&pattern) {
@@ -822,19 +962,17 @@ impl eframe::App for TacoApp {
                     self.config.save();
                 }
                 ConfigEvent::AlertTriggerUpdated => {
+                    self.show_toast("Alert saved", egui::Color32::GREEN);
                     self.config.alert_triggers = self.alert_triggers.iter()
                         .filter_map(|t| serde_json::to_value(t).ok())
                         .collect();
                     self.config.save();
                 }
                 ConfigEvent::AlertTriggerRemoved(idx) => {
-                    if idx < self.alert_triggers.len() {
-                        self.alert_triggers.remove(idx);
-                        self.config.alert_triggers = self.alert_triggers.iter()
-                            .filter_map(|t| serde_json::to_value(t).ok())
-                            .collect();
-                        self.config.save();
-                    }
+                    self.confirm_dialog = Some((
+                        "Remove this alert?".to_string(),
+                        ConfirmAction::RemoveAlert(idx),
+                    ));
                 }
                 ConfigEvent::AlertTriggerMoved(idx, up) => {
                     if up && idx > 0 {
@@ -851,8 +989,12 @@ impl eframe::App for TacoApp {
                     log::info!("PlayTestSound: id={}, path={}", sound_id, sound_path);
                     Self::play_alert_sound(sound_id, &sound_path, &self.sound_manager, false);
                 }
+                ConfigEvent::TestAlertPopup => {
+                    self.positioning_popup = true;
+                }
                 ConfigEvent::ExportProfile => {
                     self.config.export_to();
+                    self.show_toast("Profile exported", egui::Color32::GREEN);
                     self.write_system_intel("Profile exported");
                 }
                 ConfigEvent::ImportProfile => {
@@ -869,6 +1011,7 @@ impl eframe::App for TacoApp {
                             .collect();
                         self.ignore_systems = self.config.ignore_systems.clone();
                         self.gl_map.lock().unwrap().landmark_systems = self.config.landmark_systems.iter().copied().collect();
+                        self.show_toast("Profile imported", egui::Color32::GREEN);
                         self.write_system_intel("Profile imported");
                     }
                 }
@@ -882,6 +1025,10 @@ impl eframe::App for TacoApp {
 
                 ui.label("Search:");
                 let response = ui.text_edit_singleline(&mut self.search_text);
+                if self.search_focused {
+                    response.request_focus();
+                    self.search_focused = false;
+                }
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.on_search();
                 }
@@ -913,12 +1060,42 @@ impl eframe::App for TacoApp {
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(&self.status_message);
-                if self.process_logs {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(egui::Color32::GREEN, "Monitoring...");
-                    });
+                // Home system indicator
+                {
+                    let manager = self.manager.lock().unwrap();
+                    let home_id = manager.home_system_id;
+                    if home_id >= 0 && (home_id as usize) < manager.solar_systems.len() {
+                        ui.label(format!("Home: {}", manager.solar_systems[home_id as usize].name));
+                    } else {
+                        ui.label("Home: (none)");
+                    }
                 }
+                ui.separator();
+
+                // Character locations
+                if let Some((name, &loc)) = self.char_locations.iter().find(|(_, &v)| v >= 0) {
+                    let manager = self.manager.lock().unwrap();
+                    if (loc as usize) < manager.solar_systems.len() {
+                        ui.label(format!("Char: {} @ {}", name, manager.solar_systems[loc as usize].name));
+                        ui.separator();
+                    }
+                }
+
+                ui.label(&self.status_message);
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if self.process_logs {
+                        ui.colored_label(egui::Color32::GREEN, "Monitoring...");
+                    }
+                    if let Some(ref ver) = self.update_available {
+                        if ui.hyperlink_to(
+                            format!("Update available: v{}", ver),
+                            "https://github.com/sopleb/TACO-Rusty/releases/latest",
+                        ).hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                    }
+                });
             });
         });
 
@@ -1049,6 +1226,11 @@ impl eframe::App for TacoApp {
                                 .connected_to.iter()
                                 .map(|c| c.to_system_id)
                                 .collect();
+                            // Show system name + region in status bar
+                            let sys = &manager.solar_systems[sid];
+                            let region = manager.region_name(sys.region_id)
+                                .unwrap_or("Unknown");
+                            self.status_message = format!("{} ({})", sys.name, region);
                         } else {
                             gl_map.hovered_connections.clear();
                         }
@@ -1080,6 +1262,7 @@ impl eframe::App for TacoApp {
                                 self.manager.lock().unwrap().set_current_home_system(sys_id as i32);
                                 self.config.home_system_id = sys_id as i32;
                                 self.config.save();
+                                self.show_toast(&format!("Home set: {}", sys_name), egui::Color32::GREEN);
                                 ui.close();
                             }
                             if ui.button("Zoom To").clicked() {
@@ -1111,6 +1294,7 @@ impl eframe::App for TacoApp {
                                     self.config.ignore_systems.push(sys_id);
                                 }
                                 self.config.save();
+                                self.show_toast(&format!("Ignoring: {}", sys_name), egui::Color32::YELLOW);
                                 ui.close();
                             }
                             ui.separator();
@@ -1136,36 +1320,14 @@ impl eframe::App for TacoApp {
                     });
 
                     if ui.button("Refocus").clicked() {
-                        let mut targets: Vec<usize> = Vec::new();
-                        for ch in &self.followed_chars {
-                            if let Some(&loc) = self.char_locations.get(ch) {
-                                if loc >= 0 {
-                                    targets.push(loc as usize);
-                                }
-                            }
-                        }
-                        let manager = self.manager.lock().unwrap();
-                        if manager.home_system_id >= 0 {
-                            let home = manager.home_system_id as usize;
-                            if !targets.contains(&home) {
-                                targets.push(home);
-                            }
-                        }
-                        if !targets.is_empty() {
-                            self.refocus_index %= targets.len();
-                            let target = targets[self.refocus_index];
-                            self.gl_map.lock().unwrap().zoom_to_system(
-                                target,
-                                &manager.solar_systems,
-                            );
-                            self.refocus_index = (self.refocus_index + 1) % targets.len();
-                        }
+                        self.do_refocus();
                         ui.close();
                     }
                     if ui.button("Clear Home").clicked() {
-                        self.manager.lock().unwrap().clear_current_system();
-                        self.config.home_system_id = -1;
-                        self.config.save();
+                        self.confirm_dialog = Some((
+                            "Clear home system?".to_string(),
+                            ConfirmAction::ClearHome,
+                        ));
                         ui.close();
                     }
                     ui.separator();
@@ -1264,7 +1426,301 @@ impl eframe::App for TacoApp {
                 }
                 drop(manager);
                 drop(gl_map);
+
+                // Color legend overlay (Task 1)
+                if self.show_legend {
+                    let legend_rect = egui::Rect::from_min_size(
+                        rect.min + egui::vec2(8.0, rect.height() - 70.0),
+                        egui::vec2(120.0, 62.0),
+                    );
+                    let painter = ui.painter();
+                    painter.rect_filled(legend_rect, 4.0, egui::Color32::from_black_alpha(160));
+                    let items = [
+                        (egui::Color32::GREEN, "Home"),
+                        (egui::Color32::RED, "Alert"),
+                        (egui::Color32::YELLOW, "Character"),
+                    ];
+                    for (i, (color, label)) in items.iter().enumerate() {
+                        let y = legend_rect.min.y + 6.0 + i as f32 * 18.0;
+                        let dot_center = egui::pos2(legend_rect.min.x + 12.0, y + 5.0);
+                        painter.circle_filled(dot_center, 4.0, *color);
+                        painter.text(
+                            egui::pos2(legend_rect.min.x + 22.0, y),
+                            egui::Align2::LEFT_TOP,
+                            label,
+                            egui::FontId::proportional(12.0),
+                            egui::Color32::WHITE,
+                        );
+                    }
+                }
+
+                // Toast notifications (Task 2)
+                if !self.toasts.is_empty() {
+                    let painter = ui.painter();
+                    for (i, toast) in self.toasts.iter().enumerate() {
+                        let elapsed = toast.created.elapsed().as_secs_f32();
+                        let alpha = if elapsed > 2.5 {
+                            ((3.0 - elapsed) / 0.5).clamp(0.0, 1.0)
+                        } else {
+                            1.0
+                        };
+                        let y = rect.min.y + 8.0 + i as f32 * 28.0;
+                        let toast_rect = egui::Rect::from_min_size(
+                            egui::pos2(rect.max.x - 250.0, y),
+                            egui::vec2(242.0, 24.0),
+                        );
+                        painter.rect_filled(
+                            toast_rect,
+                            4.0,
+                            egui::Color32::from_black_alpha((180.0 * alpha) as u8),
+                        );
+                        painter.text(
+                            toast_rect.left_center() + egui::vec2(8.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            &toast.message,
+                            egui::FontId::proportional(12.0),
+                            toast.color.linear_multiply(alpha),
+                        );
+                    }
+                }
+
             });
+
+        // Alert popups — system notification on Linux, OS window on other platforms
+        if !self.alert_popups.is_empty() {
+            #[cfg(target_os = "linux")]
+            {
+                for popup in &self.alert_popups {
+                    let title = popup.title.clone();
+                    let detail = popup.detail.clone();
+                    std::thread::spawn(move || {
+                        let _ = std::process::Command::new("notify-send")
+                            .arg("--urgency=critical")
+                            .arg("--app-name=TACO")
+                            .arg(&title)
+                            .arg(&detail)
+                            .spawn();
+                    });
+                }
+                self.alert_popups.clear();
+            }
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                let popup_x = self.config.alert_popup_x;
+                let popup_y = self.config.alert_popup_y;
+                let popup_w = 300.0;
+
+                let popups_to_show: Vec<(String, String, f32)> = self.alert_popups.iter().map(|p| {
+                    let elapsed = p.created.elapsed().as_secs_f32();
+                    let alpha = if elapsed > 7.0 {
+                        ((8.0 - elapsed) / 1.0).clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    };
+                    (p.title.clone(), p.detail.clone(), alpha)
+                }).collect();
+
+                let total_h = popups_to_show.len() as f32 * 68.0 + 8.0;
+                let mut dismiss = false;
+
+                ctx.show_viewport_immediate(
+                    egui::ViewportId::from_hash_of("alert_popup"),
+                    egui::ViewportBuilder::default()
+                        .with_title("TACO Alert")
+                        .with_inner_size([popup_w, total_h])
+                        .with_position(egui::pos2(popup_x, popup_y))
+                        .with_decorations(false)
+                        .with_always_on_top()
+                        .with_transparent(true),
+                    |ctx, _class| {
+                        let frame = egui::Frame::NONE.fill(egui::Color32::TRANSPARENT);
+                        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+                            for (title, detail, alpha) in &popups_to_show {
+                                let (rect, response) = ui.allocate_exact_size(
+                                    egui::vec2(popup_w - 8.0, 60.0),
+                                    egui::Sense::click(),
+                                );
+                                if response.clicked() {
+                                    dismiss = true;
+                                }
+                                let painter = ui.painter();
+                                painter.rect(
+                                    rect,
+                                    6.0,
+                                    egui::Color32::from_black_alpha((220.0 * alpha) as u8),
+                                    egui::Stroke::new(2.0, egui::Color32::RED.linear_multiply(*alpha)),
+                                    egui::StrokeKind::Outside,
+                                );
+                                painter.text(
+                                    rect.center_top() + egui::vec2(0.0, 14.0),
+                                    egui::Align2::CENTER_CENTER,
+                                    title,
+                                    egui::FontId::proportional(16.0),
+                                    egui::Color32::RED.linear_multiply(*alpha),
+                                );
+                                painter.text(
+                                    rect.center_top() + egui::vec2(0.0, 38.0),
+                                    egui::Align2::CENTER_CENTER,
+                                    detail,
+                                    egui::FontId::proportional(13.0),
+                                    egui::Color32::WHITE.linear_multiply(*alpha),
+                                );
+                                ui.add_space(4.0);
+                            }
+                        });
+                        if ctx.input(|i| i.viewport().close_requested()) {
+                            dismiss = true;
+                        }
+                    },
+                );
+                if dismiss {
+                    self.alert_popups.clear();
+                }
+            }
+        }
+
+        // Test popup (positioning preview)
+        if self.positioning_popup {
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("notify-send")
+                    .arg("--urgency=critical")
+                    .arg("--app-name=TACO")
+                    .arg("ALERT: Preview System")
+                    .arg("3 jumps from Home")
+                    .spawn();
+                self.positioning_popup = false;
+            }
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                let popup_x = self.config.alert_popup_x;
+                let popup_y = self.config.alert_popup_y;
+                let popup_w = 300.0;
+                let mut close = false;
+
+                ctx.show_viewport_immediate(
+                    egui::ViewportId::from_hash_of("alert_popup_test"),
+                    egui::ViewportBuilder::default()
+                        .with_title("TACO Alert")
+                        .with_inner_size([popup_w, 100.0])
+                        .with_position(egui::pos2(popup_x, popup_y))
+                        .with_decorations(false)
+                        .with_always_on_top()
+                        .with_transparent(true),
+                    |ctx, _class| {
+                        let frame = egui::Frame::NONE.fill(egui::Color32::TRANSPARENT);
+                        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(popup_w - 8.0, 60.0),
+                                egui::Sense::hover(),
+                            );
+                            let painter = ui.painter();
+                            painter.rect(
+                                rect, 6.0,
+                                egui::Color32::from_black_alpha(220),
+                                egui::Stroke::new(2.0, egui::Color32::RED),
+                                egui::StrokeKind::Outside,
+                            );
+                            painter.text(
+                                rect.center_top() + egui::vec2(0.0, 14.0),
+                                egui::Align2::CENTER_CENTER,
+                                "ALERT: Preview System",
+                                egui::FontId::proportional(16.0),
+                                egui::Color32::RED,
+                            );
+                            painter.text(
+                                rect.center_top() + egui::vec2(0.0, 38.0),
+                                egui::Align2::CENTER_CENTER,
+                                "3 jumps from Home",
+                                egui::FontId::proportional(13.0),
+                                egui::Color32::WHITE,
+                            );
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if let Some(rect) = ctx.input(|i| i.viewport().outer_rect) {
+                                    if ui.button("Save Position Here").clicked() {
+                                        self.config.alert_popup_x = rect.min.x;
+                                        self.config.alert_popup_y = rect.min.y;
+                                        self.config.save();
+                                        self.show_toast(
+                                            &format!("Popup position saved: ({}, {})", rect.min.x as i32, rect.min.y as i32),
+                                            egui::Color32::GREEN,
+                                        );
+                                        close = true;
+                                    }
+                                }
+                                if ui.button("Close").clicked() {
+                                    close = true;
+                                }
+                            });
+                        });
+                        if ctx.input(|i| i.viewport().close_requested()) {
+                            close = true;
+                        }
+                    },
+                );
+                if close {
+                    self.positioning_popup = false;
+                }
+            }
+        }
+
+        // Confirmation dialog (Task 11)
+        if let Some((msg, action)) = self.confirm_dialog.clone() {
+            egui::Area::new(egui::Id::new("confirm_dialog"))
+                .fixed_pos(egui::pos2(
+                    ctx.available_rect().center().x - 120.0,
+                    ctx.available_rect().center().y - 40.0,
+                ))
+                .show(ctx, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(240.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(&msg);
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                if ui.button("Yes").clicked() {
+                                    match &action {
+                                        ConfirmAction::RemoveAlert(idx) => {
+                                            let idx = *idx;
+                                            if idx < self.alert_triggers.len() {
+                                                self.alert_triggers.remove(idx);
+                                                self.config.alert_triggers = self.alert_triggers.iter()
+                                                    .filter_map(|t| serde_json::to_value(t).ok())
+                                                    .collect();
+                                                self.config.save();
+                                                self.show_toast("Alert removed", egui::Color32::YELLOW);
+                                            }
+                                        }
+                                        ConfirmAction::ClearHome => {
+                                            self.manager.lock().unwrap().clear_current_system();
+                                            self.config.home_system_id = -1;
+                                            self.config.save();
+                                            self.show_toast("Home cleared", egui::Color32::YELLOW);
+                                        }
+                                        ConfirmAction::RemoveChannel(name) => {
+                                            let name = name.clone();
+                                            if let Some(mut w) = self.log_watchers.remove(&name) {
+                                                w.stop();
+                                            }
+                                            self.intel_panel.remove_channel_tab(&name);
+                                            self.config.custom_channels.retain(|ch| ch.name != name);
+                                            self.config.save();
+                                            self.show_toast(&format!("Channel removed: {}", name), egui::Color32::YELLOW);
+                                        }
+                                    }
+                                    self.confirm_dialog = None;
+                                }
+                                if ui.button("No").clicked() {
+                                    self.confirm_dialog = None;
+                                }
+                            });
+                        });
+                    });
+                });
+        }
     }
 
     fn on_exit(&mut self, _gl: Option<&glow::Context>) {

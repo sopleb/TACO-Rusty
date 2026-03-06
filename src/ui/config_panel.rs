@@ -24,6 +24,7 @@ pub enum ConfigEvent {
     MaxIntelMessagesChanged(usize),
     ExportProfile,
     ImportProfile,
+    TestAlertPopup,
 }
 
 pub struct ConfigPanel {
@@ -59,7 +60,7 @@ impl ConfigPanel {
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                ui.collapsing("Channels", |ui| {
+                ui.collapsing(format!("Channels ({})", config.custom_channels.len()), |ui| {
                     for ch in &config.custom_channels {
                         ui.horizontal(|ui| {
                             ui.label(&ch.name);
@@ -99,16 +100,19 @@ impl ConfigPanel {
                     }
                 });
 
-                ui.collapsing("Alerts", |ui| {
+                ui.collapsing(format!("Alerts ({})", alert_triggers.len()), |ui| {
                     let mut action: Option<(&str, usize)> = None;
                     let trigger_count = alert_triggers.len();
-                    let trigger_info: Vec<(bool, String)> = alert_triggers.iter()
-                        .map(|t| (t.enabled, format!("{}", t)))
+                    let trigger_info: Vec<(bool, bool, String)> = alert_triggers.iter()
+                        .map(|t| (t.enabled, t.show_popup, format!("{}", t)))
                         .collect();
-                    for (i, (mut enabled, label)) in trigger_info.into_iter().enumerate() {
+                    for (i, (mut enabled, has_popup, label)) in trigger_info.into_iter().enumerate() {
                         ui.horizontal(|ui| {
                             if ui.checkbox(&mut enabled, "").changed() {
                                 action = Some(("update_enabled", i));
+                            }
+                            if has_popup {
+                                ui.colored_label(egui::Color32::YELLOW, "\u{1f514}").on_hover_text("Popup enabled");
                             }
                             ui.label(&label);
                             if ui.small_button("Edit").clicked() {
@@ -163,6 +167,71 @@ impl ConfigPanel {
                                 self.editing_index = None;
                             }
                         });
+
+                        let mut preset_action = None;
+                        egui::ComboBox::from_id_salt("preset_alerts")
+                            .selected_text("Quick Add Preset...")
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(false, "Alert in system (0 jumps)").clicked() {
+                                    preset_action = Some(AlertTrigger {
+                                        upper_limit_operator: RangeAlertOperator::Equal,
+                                        upper_range: 0,
+                                        sound_id: 16, // HostilesHere
+                                        sound_path: "HostilesHere".to_string(),
+                                        ..AlertTrigger::default()
+                                    });
+                                }
+                                if ui.selectable_label(false, "Alert within 3 jumps").clicked() {
+                                    preset_action = Some(AlertTrigger {
+                                        upper_limit_operator: RangeAlertOperator::LessThanOrEqual,
+                                        upper_range: 3,
+                                        sound_id: 16, // HostilesHere
+                                        sound_path: "HostilesHere".to_string(),
+                                        ..AlertTrigger::default()
+                                    });
+                                }
+                                if ui.selectable_label(false, "Alert within 5 jumps").clicked() {
+                                    preset_action = Some(AlertTrigger {
+                                        upper_limit_operator: RangeAlertOperator::LessThanOrEqual,
+                                        upper_range: 5,
+                                        sound_id: 1, // Boo2
+                                        sound_path: "Boo2".to_string(),
+                                        ..AlertTrigger::default()
+                                    });
+                                }
+                            });
+                        if let Some(preset) = preset_action {
+                            alert_triggers.push(preset);
+                            self.events.push(ConfigEvent::AlertTriggerUpdated);
+                        }
+
+                        ui.separator();
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            ui.label("Alert Popup Position:");
+                            ui.horizontal(|ui| {
+                                ui.label("X:");
+                                if ui.add(egui::DragValue::new(&mut config.alert_popup_x).speed(1.0)).changed() {
+                                    config.save();
+                                }
+                                ui.label("Y:");
+                                if ui.add(egui::DragValue::new(&mut config.alert_popup_y).speed(1.0)).changed() {
+                                    config.save();
+                                }
+                                if ui.button("Test").on_hover_text("Show a test popup at this position").clicked() {
+                                    self.events.push(ConfigEvent::TestAlertPopup);
+                                }
+                            });
+                        }
+                        #[cfg(target_os = "linux")]
+                        {
+                            ui.horizontal(|ui| {
+                                ui.label("Alert popups use system notifications");
+                                if ui.button("Test").on_hover_text("Send a test notification").clicked() {
+                                    self.events.push(ConfigEvent::TestAlertPopup);
+                                }
+                            });
+                        }
                     }
 
                     if let Some(ref mut trigger) = self.editing_trigger.clone() {
@@ -179,6 +248,9 @@ impl ConfigPanel {
                                     self.show_custom_edit(ui, trigger);
                                 }
                             }
+
+                            ui.checkbox(&mut trigger.show_popup, "Show Popup")
+                                .on_hover_text("Display an alert overlay on the map when this trigger fires");
 
                             // Sound selector
                             self.show_sound_selector(ui, trigger);
@@ -208,7 +280,8 @@ impl ConfigPanel {
                     }
                 });
 
-                ui.collapsing("Ignore Strings", |ui| {
+                ui.collapsing(format!("Ignore Strings ({})", config.ignore_strings.len()), |ui| {
+                    ui.label("Messages matching these patterns will be hidden").on_hover_text("Case-insensitive word-boundary matching");
                     let mut remove_idx = None;
                     for (i, s) in config.ignore_strings.iter().enumerate() {
                         ui.horizontal(|ui| {
@@ -231,7 +304,7 @@ impl ConfigPanel {
                     });
                 });
 
-                ui.collapsing("Ignore Systems", |ui| {
+                ui.collapsing(format!("Ignore Systems ({})", config.ignore_systems.len()), |ui| {
                     let mut remove_idx = None;
                     for &sys_id in config.ignore_systems.iter() {
                         ui.horizontal(|ui| {
@@ -250,7 +323,7 @@ impl ConfigPanel {
                     }
                 });
 
-                ui.collapsing("Landmarks", |ui| {
+                ui.collapsing(format!("Landmarks ({})", config.landmark_systems.len()), |ui| {
                     let mut remove_id = None;
                     for &sys_id in &config.landmark_systems {
                         ui.horizontal(|ui| {
@@ -310,6 +383,7 @@ impl ConfigPanel {
                     let mut scroll_sens = config.scroll_sensitivity;
                     if ui
                         .add(egui::Slider::new(&mut scroll_sens, 1.0..=5.0).text("Scroll Sensitivity"))
+                        .on_hover_text("How fast the map zooms when scrolling")
                         .changed()
                     {
                         config.scroll_sensitivity = scroll_sens;
@@ -321,6 +395,7 @@ impl ConfigPanel {
                     let mut max_msgs = config.max_intel_messages;
                     if ui
                         .add(egui::Slider::new(&mut max_msgs, 10..=2000).text("Max Intel Messages"))
+                        .on_hover_text("Maximum number of messages to keep per channel")
                         .changed()
                     {
                         config.max_intel_messages = max_msgs;
@@ -350,6 +425,7 @@ impl ConfigPanel {
                         .add(
                             egui::Slider::new(&mut max_age, 0.0..=60.0).text("Max Alert Age (min)"),
                         )
+                        .on_hover_text("Alerts older than this are automatically removed (0 = never expire)")
                         .changed()
                     {
                         config.max_alert_age = max_age as u32;
@@ -360,12 +436,14 @@ impl ConfigPanel {
                     let mut max_alerts = config.max_alerts as f32;
                     if ui
                         .add(egui::Slider::new(&mut max_alerts, 1.0..=50.0).text("Max Alerts"))
+                        .on_hover_text("Maximum number of alert markers shown on the map")
                         .changed()
                     {
                         config.max_alerts = max_alerts as usize;
                         self.events.push(ConfigEvent::ConfigChanged);
                         config.save();
                     }
+
                 });
 
                 ui.collapsing("Map", |ui| {
@@ -390,7 +468,7 @@ impl ConfigPanel {
                         }
                     });
                     ui.separator();
-                    ui.label("Range From:");
+                    ui.label("Range From:").on_hover_text("Calculate jump distances from home system or character location");
                     let mut range_from = config.map_range_from;
                     if ui.radio_value(&mut range_from, 0, "Home").clicked()
                         || ui.radio_value(&mut range_from, 1, "Character").clicked()
@@ -446,16 +524,18 @@ impl ConfigPanel {
                     ui.label("  Scroll: Zoom");
                     ui.label("  Click: Select system");
                     ui.label("  Right-click: Context menu");
+                    ui.label("  Ctrl+F: Focus search");
                     ui.label("  Ctrl+Q: Quit");
                     ui.label("  F11: Toggle fullscreen");
                     ui.label("  Ctrl+H: Toggle panel");
+                    ui.label("  Home: Refocus map");
                 });
             });
     }
 
     fn show_ranged_edit(&self, ui: &mut egui::Ui, trigger: &mut AlertTrigger, system_names: &rustc_hash::FxHashMap<String, usize>) {
         ui.horizontal(|ui| {
-            ui.label("Upper:");
+            ui.label("Upper:").on_hover_text("Upper range limit — alert fires when jump count satisfies this condition");
             let mut op = trigger.upper_limit_operator as u8;
             egui::ComboBox::from_id_salt("upper_op")
                 .selected_text(op_label(trigger.upper_limit_operator))
@@ -472,7 +552,7 @@ impl ConfigPanel {
         });
 
         ui.horizontal(|ui| {
-            ui.label("Lower:");
+            ui.label("Lower:").on_hover_text("Lower range limit — optional minimum jump distance");
             let mut op = trigger.lower_limit_operator as u8;
             egui::ComboBox::from_id_salt("lower_op")
                 .selected_text(op_label(trigger.lower_limit_operator))
@@ -489,15 +569,15 @@ impl ConfigPanel {
         });
 
         ui.horizontal(|ui| {
-            ui.label("Range To:");
+            ui.label("Range To:").on_hover_text("Calculate jump distances from this reference point");
             let mut rt = trigger.range_to as u8;
             egui::ComboBox::from_id_salt("range_to")
                 .selected_text(range_to_label(trigger.range_to))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut rt, 0, "Home");
-                    ui.selectable_value(&mut rt, 1, "System");
-                    ui.selectable_value(&mut rt, 3, "Any Character");
-                    ui.selectable_value(&mut rt, 5, "Any Followed Character");
+                    ui.selectable_value(&mut rt, 0, "Home").on_hover_text("Distance from home system");
+                    ui.selectable_value(&mut rt, 1, "System").on_hover_text("Distance from a specific system");
+                    ui.selectable_value(&mut rt, 3, "Any Character").on_hover_text("Distance from any detected character");
+                    ui.selectable_value(&mut rt, 5, "Any Followed Character").on_hover_text("Distance from followed characters only");
                 });
             trigger.range_to = RangeAlertType::try_from(rt).unwrap();
         });
