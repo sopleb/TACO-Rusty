@@ -136,6 +136,10 @@ impl SolarSystemManager {
         self.solar_systems.len()
     }
 
+    pub fn region_name(&self, region_id: u32) -> Option<&str> {
+        self.region_names.get(&region_id).map(|s| s.as_str())
+    }
+
 
     pub fn load_system_data(&mut self, data: Vec<SystemDataJson>) -> bool {
         let size = data.len();

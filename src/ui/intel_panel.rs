@@ -106,21 +106,21 @@ impl IntelPanel {
         let tab_count = 1 + self.channels.len() + 1;
         ui.horizontal(|ui| {
             if ui
-                .selectable_label(self.selected_tab == 0, "All")
+                .selectable_label(self.selected_tab == 0, format!("All ({})", self.all_messages.len()))
                 .clicked()
             {
                 self.selected_tab = 0;
             }
             for (i, ch) in self.channels.iter().enumerate() {
                 if ui
-                    .selectable_label(self.selected_tab == i + 1, &ch.name)
+                    .selectable_label(self.selected_tab == i + 1, format!("{} ({})", ch.name, ch.messages.len()))
                     .clicked()
                 {
                     self.selected_tab = i + 1;
                 }
             }
             if ui
-                .selectable_label(self.selected_tab == tab_count - 1, "System")
+                .selectable_label(self.selected_tab == tab_count - 1, format!("System ({})", self.system_tab.messages.len()))
                 .clicked()
             {
                 self.selected_tab = tab_count - 1;
