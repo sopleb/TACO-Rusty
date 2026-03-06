@@ -635,14 +635,17 @@ impl GlMap {
         }
 
         if self.show_char_locations && self.display_char_names {
+            let mut char_count_at: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
             for (i, (_, sys_id)) in self.char_locations.iter().enumerate() {
                 if *sys_id >= manager.solar_systems.len() { continue; }
                 let sys = &manager.solar_systems[*sys_id];
                 let Some((sx, sy)) = project_to_screen(&mvp, sys.xyz(), w, h) else { continue };
+                let slot = char_count_at.entry(*sys_id).or_insert(0);
                 self.pending_labels.push(MapLabel {
-                    x: sx + label_offset_x, y: sy + label_offset_y - line_h,
+                    x: sx + label_offset_x, y: sy + label_offset_y - line_h - (*slot as f32 * line_h),
                     text: MapLabelText::CharName(i), color: [0.0, 0.6, 0.8, 1.0],
                 });
+                *slot += 1;
             }
         }
 
