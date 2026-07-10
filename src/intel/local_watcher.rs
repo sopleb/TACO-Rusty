@@ -225,7 +225,7 @@ impl LocalWatcher {
                 }
             }
         }
-        files.sort_by(|a, b| b.1.cmp(&a.1));
+        files.sort_by_key(|f| std::cmp::Reverse(f.1));
 
         files
             .into_iter()

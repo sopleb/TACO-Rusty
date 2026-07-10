@@ -3144,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "taco"
-version = "3.0.1"
+version = "3.0.10"
 dependencies = [
  "chrono",
  "dirs",

@@ -102,7 +102,8 @@ impl LogWatcher {
                 InterestingFile {
                     last_position: length,
                     last_update: Instant::now(),
-                    last_combat: Instant::now() - Duration::from_secs(3600),
+                    // Backdating (Instant::now() - d) panics on Windows when uptime < d.
+                    last_combat: Instant::now(),
                     char_name: char_name.clone(),
                     timeout_triggered: true,
                     in_combat: false,
@@ -136,8 +137,8 @@ impl LogWatcher {
     fn do_tick(&mut self) -> Vec<WatcherMessage> {
         let mut messages = Vec::new();
 
-        let cutoff = Instant::now() - Duration::from_secs(5);
-        self.previous_entries.retain(|(_, t)| *t >= cutoff);
+        self.previous_entries
+            .retain(|(_, t)| t.elapsed() <= Duration::from_secs(5));
 
         let changed = self.get_changed_log_files();
         for path in changed {
@@ -150,7 +151,7 @@ impl LogWatcher {
                 InterestingFile {
                     last_position: 0,
                     last_update: Instant::now(),
-                    last_combat: Instant::now() - Duration::from_secs(3600),
+                    last_combat: Instant::now(),
                     char_name: char_name.clone(),
                     timeout_triggered: true,
                     in_combat: false,
@@ -306,7 +307,7 @@ impl LogWatcher {
             }
         }
 
-        files.sort_by(|a, b| b.1.cmp(&a.1));
+        files.sort_by_key(|f| std::cmp::Reverse(f.1));
 
         let mut result = Vec::new();
         for (path, _) in files {
